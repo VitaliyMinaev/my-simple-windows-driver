@@ -69,13 +69,13 @@ NTSTATUS DriverEntry(
 
 	DbgPrintEx(0, 0, ("Driver has been loaded \r\n"));
 
-	PRTL_OSVERSIONINFOW operationSystemData;
+	RTL_OSVERSIONINFOW operationSystemData;
 	RtlGetVersion(&operationSystemData);
 	// Print data about os
 	DbgPrintEx(0, 0, "Data about system: windows: %u %u.%u", 
-		(unsigned int)operationSystemData->dwBuildNumber,
-		(unsigned int)operationSystemData->dwMajorVersion,
-		(unsigned int)operationSystemData->dwMinorVersion);
+		(unsigned int)operationSystemData.dwBuildNumber,
+		(unsigned int)operationSystemData.dwMajorVersion,
+		(unsigned int)operationSystemData.dwMinorVersion);
 
 	return status;
 }
