@@ -1,34 +1,17 @@
 #include "driver.h"
 
+#define DEVICE_SEND_BUFF CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_WRITE_DATA)
+#define DEVICE_SEND_DIRECT CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_IN_DIRECT, FILE_WRITE_DATA)
+#define DEVICE_SEND_NEITHER CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_NEITHER, FILE_WRITE_DATA)
+
+#define DEVICE_REC_BUFF CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define DEVICE_REC_DIRECT CTL_CODE(FILE_DEVICE_UNKNOWN, 0x805, METHOD_OUT_DIRECT, FILE_READ_DATA)
+#define DEVICE_REC_NEITHER CTL_CODE(FILE_DEVICE_UNKNOWN, 0x806, METHOD_NEITHER, FILE_READ_DATA)
+
 UNICODE_STRING DeviceName = RTL_CONSTANT_STRING(L"\\Device\\mydevicedriver");
 UNICODE_STRING SymbolicLinkName = RTL_CONSTANT_STRING(L"\\??\\mydevicedriverlink");
 
 PDEVICE_OBJECT DeviceObject = NULL;
-
-NTSTATUS DispatchPassThru(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	PIO_STACK_LOCATION irpsp = IoGetCurrentIrpStackLocation(Irp);
-	NTSTATUS status = STATUS_SUCCESS;
-
-	switch (irpsp->MajorFunction) {
-	case IRP_MJ_CREATE:
-		DbgPrintEx(0, 0, ("create request \r\n"));
-		break;
-	case IRP_MJ_CLOSE:
-		DbgPrintEx(0, 0, ("create request \r\n"));
-		break;
-	case IRP_MJ_READ:
-		DbgPrintEx(0, 0, ("create request \r\n"));
-		break;
-	default:
-		break;
-	}
-
-	Irp->IoStatus.Information = 0;
-	Irp->IoStatus.Status = status;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
-	return status;
-}
 
 NTSTATUS DriverEntry(
 	_In_ PDRIVER_OBJECT driverObject,
@@ -60,12 +43,10 @@ NTSTATUS DriverEntry(
 	}
 
 	for (int i = 0; i < IRP_MJ_MAXIMUM_FUNCTION; ++i) {
-		driverObject->MajorFunction[i] = DispatchPassThru;
+		driverObject->MajorFunction[i] = DispathPassThru;
 	}
 
-	// driverObject->MajorFunction[IRP_MJ_READ] = DispatchCustom;
-	// driverObject->MajorFunction[IRP_MJ_WRITE] = DispatchCustom;
-
+	driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = WinDrvDispatchCTL;
 
 	DbgPrintEx(0, 0, ("Driver has been loaded \r\n"));
 
@@ -87,4 +68,91 @@ VOID DriverUnload(
 	IoDeleteDevice(DeviceObject);
 
 	DbgPrintEx(0, 0, ("Driver has been unloaded \r\n"));
+}
+
+
+NTSTATUS WinDrvDispatchCTL(PDEVICE_OBJECT DeviceObject, PIRP irp)
+{
+	PIO_STACK_LOCATION pirps = IoGetCurrentIrpStackLocation(irp);
+	NTSTATUS status = STATUS_SUCCESS;
+	ULONG retLen = 0;
+	PVOID buffer = NULL;
+	PWCHAR inBuf, outBuf;
+	ULONG inBufLength = pirps->Parameters.DeviceIoControl.InputBufferLength;
+	ULONG outBufLength = pirps->Parameters.DeviceIoControl.OutputBufferLength;
+	PWCHAR data = L"hello from driver!";
+	ULONG datalen = LEN(data);
+
+	DbgPrintEx(0, 0, ("win-driver: "__FUNCTION__""));
+	DbgPrintEx(0, 0, ("inBufLength: %u outBufLength: %u\r\n", inBufLength, outBufLength));
+
+	switch (pirps->Parameters.DeviceIoControl.IoControlCode)
+	{
+	case DEVICE_SEND_BUFF:
+		//init buffer
+		buffer = irp->AssociatedIrp.SystemBuffer;
+		KdPrint(("Send data is %ws!!! \r\n"), buffer);
+		retLen = LEN(buffer);
+		break;
+	case DEVICE_REC_BUFF:
+		//init buffer
+		buffer = irp->AssociatedIrp.SystemBuffer;
+		wcsncpy(buffer, data, 511);
+		retLen = LEN(buffer);
+		break;
+	case DEVICE_SEND_DIRECT:
+		//init buffer
+		inBuf = irp->AssociatedIrp.SystemBuffer;
+		retLen = LEN(inBuf);
+		break;
+	case DEVICE_REC_DIRECT:
+		//init buffer
+		buffer = MmGetSystemAddressForMdl(irp->MdlAddress);
+		wcsncpy(buffer, data, 511);
+		retLen = LEN(buffer);
+		break;
+	case DEVICE_SEND_NEITHER:
+		buffer = pirps->Parameters.DeviceIoControl.Type3InputBuffer;
+		retLen = LEN(buffer);
+		break;
+	case DEVICE_REC_NEITHER:
+		buffer = irp->UserBuffer;
+		wcsncpy(buffer, data, 511);
+		retLen = LEN(buffer);
+		break;
+	default:
+		status = STATUS_INVALID_DEVICE_REQUEST;
+		break;
+	}
+
+	irp->IoStatus.Status = status;
+	irp->IoStatus.Information = retLen;
+	IoCompleteRequest(irp, IO_NO_INCREMENT);
+	return status;
+}
+
+NTSTATUS DispathPassThru(PDEVICE_OBJECT DeviceObject, PIRP irp)
+{
+	PIO_STACK_LOCATION irps = IoGetCurrentIrpStackLocation(irp);
+	NTSTATUS status = STATUS_SUCCESS;
+
+	switch (irps->MajorFunction)
+	{
+	case IRP_MJ_CREATE:
+		DbgPrintEx(0, 0, ("win-driver: "__FUNCTION__": request: create"));
+		break;
+	case IRP_MJ_CLOSE:
+		DbgPrintEx(0, 0, ("win-driver: "__FUNCTION__": request: close"));
+		break;
+	default:
+		status = STATUS_INVALID_PARAMETER;
+		break;
+	}
+
+	irp->IoStatus.Information = NULL;
+	irp->IoStatus.Status = status;
+
+	IoCompleteRequest(irp, IO_NO_INCREMENT);
+
+	return status;
 }
